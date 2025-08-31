@@ -1,4 +1,3 @@
-```markdown
 # Rust Auth App
 
 A simple authentication helper tool implemented in Rust.  
