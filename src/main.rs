@@ -1,28 +1,91 @@
 use std::{
-    env, time::{SystemTime, UNIX_EPOCH}
+    env, time::{SystemTime, UNIX_EPOCH}, fs
 };
 use hmac::{ Mac, Hmac, digest::KeyInit as Keyinitl };
 use sha1::Sha1;
 use base32::decode;
+use image::open;
+use serde_json;
 
 const STEP: u64 = 30;
+const PATH: &str = ""; // path
 
 type HmacSha1 = Hmac<Sha1>;
 
 fn main() {
-    let data = parse_qr_code().expect("[!] Error: incorrect link");
+    let data = argparse();
     let code = get_code(&data);
 
     println!("[CODE] {code:0>6}");
 }
 
-fn parse_qr_code() -> Option<Vec<u8>> {
-    /* TODO: Add picture to qr code */
-    let url = env::args()
-        .nth(1)
-        .expect("[!] Error: please enter a arg")
-        .clone();
+fn argparse() -> Vec<u8> {
+    let args: Vec<String> = env::args().collect();
 
+    if args.len() < 2 {
+        println!("[?] Usage: {} [--link/--code/-s] <link/path>", args[0]);
+        std::process::exit(0);
+    }
+
+    match args[1].as_str() {
+        // if link or code save the link too in json
+        "--link" => {
+            if let Some(x) = parse_link_code(args[2].clone()) {
+                return x;
+            }
+            std::process::exit(0);
+        },
+        "--code" => {
+            if let Some(x) = parse_qr_code(args[2].clone()) {
+                return x;
+            }
+            std::process::exit(0);
+        },
+        "-s" => {
+            /* load all to json
+             * if doesnt exists then open then get the link then save it
+            if !std::fs::exists(PATH).unwrap() {
+                let file = std::fs::File::create(PATH).unwrap();
+            } else {
+                let fil
+            } */
+
+            if !std::fs::exists(PATH).unwrap() {
+                eprintln!("[!] Error: file not created!");
+                std::process::exit(0);
+            }
+
+            let data: String = match fs::read_to_string(PATH) {
+                Ok(x) => x,
+                Err(err) => {
+                    eprintln!("[!] Error: Reading from file {err}");
+                    std::process::exit(0);
+                }
+            };
+
+
+            std::process::exit(0);
+        },
+        unknown => {
+            println!("{}", unknown);
+            std::process::exit(0);
+        }
+    }
+}
+
+fn parse_qr_code(path: String) -> Option<Vec<u8>> {
+    let img = open(&path).unwrap().to_luma8();
+    let mut img = rqrr::PreparedImage::prepare(img);
+    let grid = img.detect_grids();
+
+    let (_, content) = grid[0].decode().unwrap();
+
+    println!("{}", content);
+
+    parse_link_code(content)
+}
+
+fn parse_link_code(url: String) -> Option<Vec<u8>> {
     let mut x = url.split('=');
     let second = x.nth(1)?;
     let secret = second.split('&').nth(0)?; // lol
