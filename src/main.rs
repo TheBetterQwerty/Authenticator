@@ -5,12 +5,18 @@ use hmac::{ Mac, Hmac, digest::KeyInit as Keyinitl };
 use sha1::Sha1;
 use base32::decode;
 use image::open;
-use serde_json;
+use serde::{Serialize, Deserialize};
 
 const STEP: u64 = 30;
 const PATH: &str = ""; // path
 
 type HmacSha1 = Hmac<Sha1>;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Map {
+    site: String,
+    link: String,
+}
 
 fn main() {
     let data = argparse();
@@ -30,6 +36,7 @@ fn argparse() -> Vec<u8> {
     match args[1].as_str() {
         // if link or code save the link too in json
         "--link" => {
+
             if let Some(x) = parse_link_code(args[2].clone()) {
                 return x;
             }
@@ -42,14 +49,6 @@ fn argparse() -> Vec<u8> {
             std::process::exit(0);
         },
         "-s" => {
-            /* load all to json
-             * if doesnt exists then open then get the link then save it
-            if !std::fs::exists(PATH).unwrap() {
-                let file = std::fs::File::create(PATH).unwrap();
-            } else {
-                let fil
-            } */
-
             if !std::fs::exists(PATH).unwrap() {
                 eprintln!("[!] Error: file not created!");
                 std::process::exit(0);
@@ -63,7 +62,23 @@ fn argparse() -> Vec<u8> {
                 }
             };
 
+            if data.len() == 0 {
+                eprintln!("[!] Error: File is empty!");
+                std::process::exit(0);
+            }
 
+            let records: Vec<Map> = serde_json::from_str(&data).unwrap();
+            let search = &args[3];
+
+            for record in records {
+                if record.site.eq_ignore_ascii_case(search) {
+                    if let Some(x) = parse_link_code(record.link) {
+                        return x;
+                    }
+                }
+            }
+
+            eprintln!("[!] Error: No records was found!");
             std::process::exit(0);
         },
         unknown => {
