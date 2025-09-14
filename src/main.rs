@@ -1,22 +1,15 @@
-use std::{
-    env, time::{SystemTime, UNIX_EPOCH}, fs
+use std::{ env, time::{SystemTime, UNIX_EPOCH},
+    fs, io::Write,
 };
 use hmac::{ Mac, Hmac, digest::KeyInit as Keyinitl };
 use sha1::Sha1;
 use base32::decode;
 use image::open;
-use serde::{Serialize, Deserialize};
 
 const STEP: u64 = 30;
-const PATH: &str = ""; // path
+const PATH: &str = "./tokens"; // path
 
 type HmacSha1 = Hmac<Sha1>;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Map {
-    site: String,
-    link: String,
-}
 
 fn main() {
     let data = argparse();
@@ -28,25 +21,38 @@ fn main() {
 fn argparse() -> Vec<u8> {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 2 {
-        println!("[?] Usage: {} [--link/--code/-s] <link/path>", args[0]);
+    if args.len() < 3 {
+        help(&args[0]);
         std::process::exit(0);
     }
 
     match args[1].as_str() {
-        // if link or code save the link too in json
+        "--help" => {
+            help(&args[0]);
+        },
         "--link" => {
+            if let Some(x) = parse_link_code(&args[2]) {
+                let mut file = fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(PATH)
+                    .unwrap();
+                let _ = writeln!(&mut file, "{}", &args[2]);
 
-            if let Some(x) = parse_link_code(args[2].clone()) {
                 return x;
             }
-            std::process::exit(0);
         },
         "--code" => {
-            if let Some(x) = parse_qr_code(args[2].clone()) {
+            if let Some(x) = parse_qr_code(&args[2]) {
+                let mut file = fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(PATH)
+                    .unwrap();
+                let _ = writeln!(&mut file, "{}", &args[2]);
+
                 return x;
             }
-            std::process::exit(0);
         },
         "-s" => {
             if !std::fs::exists(PATH).unwrap() {
@@ -54,41 +60,40 @@ fn argparse() -> Vec<u8> {
                 std::process::exit(0);
             }
 
-            let data: String = match fs::read_to_string(PATH) {
-                Ok(x) => x,
+            let content: String = match fs::read_to_string(PATH) {
+                Ok(x) => if x.len() != 0 {
+                    x
+                } else {
+                    eprintln!("[!] Error: File is empty!");
+                    std::process::exit(0);
+                },
                 Err(err) => {
                     eprintln!("[!] Error: Reading from file {err}");
                     std::process::exit(0);
                 }
             };
 
-            if data.len() == 0 {
-                eprintln!("[!] Error: File is empty!");
-                std::process::exit(0);
-            }
+            let links: Vec<_> = content.split('\n').collect();
+            let search = &args[2];
 
-            let records: Vec<Map> = serde_json::from_str(&data).unwrap();
-            let search = &args[3];
-
-            for record in records {
-                if record.site.eq_ignore_ascii_case(search) {
-                    if let Some(x) = parse_link_code(record.link) {
+            for link in links {
+                if link.to_lowercase().contains(&search.to_lowercase()) {
+                    if let Some(x) = parse_link_code(link) {
                         return x;
                     }
                 }
             }
 
             eprintln!("[!] Error: No records was found!");
-            std::process::exit(0);
         },
         unknown => {
-            println!("{}", unknown);
-            std::process::exit(0);
+            println!("[!] Unknown command '{}'!", unknown);
         }
     }
+    std::process::exit(0);
 }
 
-fn parse_qr_code(path: String) -> Option<Vec<u8>> {
+fn parse_qr_code(path: &str) -> Option<Vec<u8>> {
     let img = open(&path).unwrap().to_luma8();
     let mut img = rqrr::PreparedImage::prepare(img);
     let grid = img.detect_grids();
@@ -97,10 +102,10 @@ fn parse_qr_code(path: String) -> Option<Vec<u8>> {
 
     println!("{}", content);
 
-    parse_link_code(content)
+    parse_link_code(&content)
 }
 
-fn parse_link_code(url: String) -> Option<Vec<u8>> {
+fn parse_link_code(url: &str) -> Option<Vec<u8>> {
     let mut x = url.split('=');
     let second = x.nth(1)?;
     let secret = second.split('&').nth(0)?; // lol
@@ -143,4 +148,18 @@ fn get_code(key: &[u8]) -> u32 {
     let required = truncated_byte % 1_000_000; // round up
 
     required
+}
+
+fn help(prog_name: &str) {
+    println!("
+Usage:
+    {} [--link | --code | -s] <link_or_path_or_query>
+
+Options:
+    --link <link>        Provide a direct link (URL) to a QR code.
+
+    --code <path>        Provide a local file path to an image containing a QR code.
+                         The program will decode the QR code from this image file.
+
+    -s <query>           Search for <query> in a text file containing saved links.", prog_name);
 }
